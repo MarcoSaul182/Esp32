@@ -1,0 +1,316 @@
+#include <FirebaseESP32.h>
+#include <FirebaseESP32HTTPClient.h>
+#include <FirebaseJson.h>
+#include <jsmn.h>
+
+#include <HTTPClientESP32Ex.h>
+#include <ssl_client32.h>
+#include <WiFiClientSecureESP32.h>
+
+#include <WiFi.h> 
+#include <Wire.h>
+#include "DHT.h"
+
+#define FIREBASE_HOST "AIzaSyCE2I1ssF5e proyecto-esp32.firebaseapp.com"
+#define FIREBASE_AUTH "bhsXusgATv4mGhOv9UZEe0gsDuYHnmPrmrLydAIs"
+#define WIFI_SSID "UbeeA64A-2.4G"
+#define WIFI_PASSWORD "5F99F3A64A"
+
+FirebaseData firebaseData;
+String ruta = "/ESP32";
+
+#define DHTTYPE DHT11 // DHT 11
+uint8_t DHTPin = 27;
+DHT dht(DHTPin, DHTTYPE);
+float Temperature;
+float Humidity;
+void send_event(const char *event);
+const char* ssid     = "UbeeA64A-2.4G";
+const char* password = "5F99F3A64A";
+const char *host = "maker.ifttt.com";
+const char *privateKey = "gtK9q9LY85-AuYXKiFPKvXzi_LNxtdnu0ZkozE_JzDO";
+WiFiServer server(80);
+String header;
+void setup() {
+Serial.begin(115200);
+pinMode(DHTPin, INPUT);
+dht.begin();
+Serial.print("Conectando a la red... ");
+Serial.println(ssid);
+WiFi.begin(ssid, password);
+while (WiFi.status() != WL_CONNECTED) {
+delay(500);
+Serial.print(".");
+}
+Serial.println("");
+Serial.println("Se ha conectado a la red.");
+Serial.println("La IP es : ");
+Serial.println(WiFi.localIP());
+server.begin();
+Serial.println("Server iniciado ");
+Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+Firebase.reconnectWiFi(true);
+}
+void loop()
+{
+Firebase.deleteNode(firebaseData, "temperatura");
+Firebase.getFloat(firebaseData, ruta + "/temperatura/Temperature");
+Serial.println(firebaseData.floatData());
+  
+Temperature = dht.readTemperature(); 
+Humidity = dht.readHumidity(); 
+WiFiClient client = server.available();
+if (client) 
+{ 
+Serial.println("Web Client connected ");
+String request = client.readStringUntil('\r'); 
+client.println("HTTP/1.1 200 OK");
+client.println("Content-Type: text/html");
+client.println("Connection: close");  // the connection will be closed after completion of the response
+client.println("Refresh: 10");  // update the page after 10 sec
+client.println();
+client.println("<!DOCTYPE HTML>");
+client.println("<html>");
+client.println("<style>html { font-family: Cairo; display: block; margin: 0px auto; text-align: center;color: #333333; background-color: ##f3ffee;}");
+client.println("body{margin-top: 50px;}");
+client.println("h1 {margin: 50px auto 30px; font-size: 50px;  text-align: center;}");
+client.println(".side_adjust{display: inline-block;vertical-align: middle;position: relative;}");
+client.println(".text1{font-weight: 180; padding-left: 15px; font-size: 50px; width: 170px; text-align: left; color: #3498db;}");
+client.println(".data1{font-weight: 180; padding-left: 70px; font-size: 50px;color: #3498db;}");
+client.println(".text2{font-weight: 180;padding-left: 15px; font-size: 50px; width: 170px; text-align: left; color: #ff6600;}");
+client.println(".data2{font-weight: 180; padding-left: 120px; font-size: 50px;color: #ff6600;}");
+client.println(".data{padding: 10px;}");
+client.println("</style>");
+client.println("</head>");
+client.println("<body>");
+client.println("<div id=\"webpage\">");   
+client.println("<h1>Sensor de Temperatura y Humedad</h1>");
+client.println("<div class=\"data\">");
+client.println("<div class=\"side_adjust text1\">Humedad:</div>");
+client.println("<div class=\"side_adjust data1\">");
+client.print(Humidity);
+client.println("<div class=\"side_adjust text1\">%</div>");
+client.println("</div>");
+client.println("<div class=\"data\">");
+client.println("<div class=\"side_adjust text2\">Temperatura:</div>");
+client.println("<div class=\"side_adjust data2\">");
+client.print(Temperature);
+client.println("<div class=\"side_adjust text2\">*C</div>");
+client.println("</div>");
+client.println("</div>");
+client.println("</body>");
+client.println("</html>");
+ delay(4000);
+  if ( Temperature >= 20) {
+        send_event("temp_event");
+        }
+}
+}
+void send_event(const char *event)
+{
+  Serial.print("Connecting to ");
+  Serial.println(host);
+  // Use WiFiClient class to create TCP connections
+  WiFiClient client;
+  const int httpPort = 80;
+  if (!client.connect(host, httpPort)) {
+    Serial.println("Connection failed");
+    return;
+  }
+  // We now create a URI for the request
+  String url = "/trigger/";
+  url += event;
+  url += "/with/key/";
+  url += privateKey;
+  Serial.print("Requesting URL: ");
+  Serial.println(url);
+  // This will send the request to the server
+  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+               "Host: " + host + "\r\n" + 
+               "Connection: close\r\n\r\n");
+  while(client.connected())
+  {
+    if(client.available())
+    {
+      String line = client.readStringUntil('\r');
+      Serial.print(line);
+    } else {
+      // No data yet, wait a bit
+      delay(50);
+    };
+  }
+  Serial.println();
+  Serial.println("closing connection");
+  client.stop();
+}
+//***********************************************
+//Leds
+#include <WiFi.h> 
+
+// Variable to store the HTTP request
+String header;
+
+String output26State = "off";
+String output27State = "off";
+
+const int output26 = 26;
+const int output27 = 27;
+
+void setup() {
+  Serial.begin(115200);
+ 
+  pinMode(output26, OUTPUT);
+  pinMode(output27, OUTPUT);
+  // Set outputs to LOW
+  digitalWrite(output26, LOW);
+  digitalWrite(output27, LOW);
+
+
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("");
+  Serial.println("WiFi connected.");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  server.begin();
+}
+
+void loop(){
+  WiFiClient client = server.available();  
+
+  if (client) {                             
+    Serial.println("New Client.");         
+    String currentLine = "";               
+    while (client.connected()) {          
+      if (client.available()) {           
+        char c = client.read();             
+        Serial.write(c);                    
+        header += c;
+        if (c == '\n') {                  
+        
+          if (currentLine.length() == 0) {
+            
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println("Connection: close");
+            client.println();
+            
+           
+            if (header.indexOf("GET /26/on") >= 0) {
+              Serial.println("GPIO 26 on");
+              output26State = "on";
+              digitalWrite(output26, HIGH);
+            } else if (header.indexOf("GET /26/off") >= 0) {
+              Serial.println("GPIO 26 off");
+              output26State = "off";
+              digitalWrite(output26, LOW);
+            } else if (header.indexOf("GET /27/on") >= 0) {
+              Serial.println("GPIO 27 on");
+              output27State = "on";
+              digitalWrite(output27, HIGH);
+            } else if (header.indexOf("GET /27/off") >= 0) {
+              Serial.println("GPIO 27 off");
+              output27State = "off";
+              digitalWrite(output27, LOW);
+            }
+           
+            client.println("<!DOCTYPE html><html>");
+            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+            client.println("<link rel=\"icon\" href=\"data:,\">");
+            // CSS to style the on/off buttons 
+            // Feel free to change the background-color and font-size attributes to fit your preferences
+            client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
+            client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px;");
+            client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
+            client.println(".button2 {background-color: #555555;}</style></head>");
+            
+      
+            client.println("<body><h1>ESP32 Web Server</h1>");
+            
+        
+            client.println("<p>GPIO 26 - State " + output26State + "</p>");
+            // If the output26State is off, it displays the ON button       
+            if (output26State=="off") {
+              client.println("<p><a href=\"/26/on\"><button class=\"button\">ON</button></a></p>");
+            } else {
+              client.println("<p><a href=\"/26/off\"><button class=\"button button2\">OFF</button></a></p>");
+            } 
+              
+        
+            client.println("<p>GPIO 27 - State " + output27State + "</p>");
+       
+            if (output27State=="off") {
+              client.println("<p><a href=\"/27/on\"><button class=\"button\">ON</button></a></p>");
+            } else {
+              client.println("<p><a href=\"/27/off\"><button class=\"button button2\">OFF</button></a></p>");
+            }
+            client.println("</body></html>");
+            
+         
+            client.println();
+     
+            break;
+          } else { 
+            currentLine = "";
+          }
+        } else if (c != '\r') {  
+          currentLine += c;     
+        }
+      }
+    }
+   
+    header = "";
+    // Close the connection
+    client.stop();
+    Serial.println("Client disconnected.");
+    Serial.println("");
+  }
+}
+
+//*************************
+//LCD
+
+#include <LiquidCrystal.h>
+LiquidCrystal lcd(7, 8, 9, 10, 11, 12); 
+
+String mensaje = "Super Chore";   
+int longitud_texto = mensaje.length(); 
+
+void setup() {
+
+  lcd.begin(16, 2);     
+  lcd.setCursor(0, 0);  
+  lcd.print(mensaje);    
+  delay(1500);
+}
+
+void loop() {
+
+ 
+  for (int posicion = 0; posicion < longitud_texto; posicion++)
+  {
+    lcd.scrollDisplayLeft();
+    delay(300);
+  }
+
+  
+  for (int posicion = 0; posicion < (16 + longitud_texto); posicion++)
+  {
+    lcd.scrollDisplayRight();
+    delay(300);
+  }
+
+  for (int posicion = 0; posicion < 16; posicion++)
+  {
+    lcd.scrollDisplayLeft();
+    delay(300);
+  }
+
+  delay(1000);
+}
